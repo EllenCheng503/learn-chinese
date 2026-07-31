@@ -244,6 +244,20 @@ select{
   width:100%;min-height:72px;font-size:calc(19px * var(--scale));font-family:inherit;
   border:3px solid var(--line);border-radius:14px;background:var(--card);padding:0 14px;
 }
+/* ---------- 沒聲音時的提示（固定在畫面下方，不影響版面） ---------- */
+#speechWarn{
+  display:none;
+  position:fixed;left:10px;right:10px;bottom:10px;z-index:60;
+  max-width:620px;margin:0 auto;
+  background:#FFF6E2;border:3px solid var(--gold);border-radius:16px;
+  padding:16px;box-shadow:0 6px 20px rgba(60,48,30,.22);
+  padding-bottom:calc(16px + env(safe-area-inset-bottom));
+}
+#speechWarn.on{display:block;}
+#speechWarn p{font-size:calc(18px * var(--scale));line-height:1.5;margin-bottom:6px;}
+#speechWarn .warn-title{font-size:calc(21px * var(--scale));font-weight:800;margin-bottom:10px;}
+#speechWarn .btn{margin-top:12px;}
+
 @media (prefers-reduced-motion:reduce){*{transition:none!important;}}
 </style>
 </head>
@@ -456,6 +470,15 @@ select{
     <button class="btn btn-line mt" data-go="home" type="button">回首頁</button>
   </section>
 
+</div>
+
+<!-- 偵測到沒聲音時才出現。用 fixed 疊在最上層，不會推動版面 -->
+<div id="speechWarn" role="alert">
+  <p class="warn-title">好像沒有聲音</p>
+  <p>1. 手機側邊的靜音開關要關掉</p>
+  <p>2. 音量要開大</p>
+  <p>3. 還是沒聲音的話，改用 Safari 打開這一頁</p>
+  <button class="btn btn-line" id="speechWarnOk" type="button">知道了</button>
 </div>
 
 <script>
@@ -696,8 +719,11 @@ const TTS = {
     };
     return v.slice().sort((a,b) => rank(a)-rank(b))[0];
   },
+  everSpoke: false,   // 是否曾經真的開始朗讀過
+  warned: false,      // 是否已經提示過沒聲音
   speak(text, rate){
-    if(!('speechSynthesis' in window) || !text) return;
+    if(!text) return;
+    if(!('speechSynthesis' in window)){ warnNoSpeech(); return; }
     try{
       speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(text);
@@ -706,14 +732,32 @@ const TTS = {
       u.rate = rate || S.rate;
       u.pitch = 1;
       u.volume = 1;
+      u.onstart = () => { TTS.everSpoke = true; };
+      u.onerror = () => { warnNoSpeech(); };
       // iOS Safari 在 cancel() 之後馬上 speak() 會沒有聲音，隔一下再唸
       clearTimeout(this._t);
       this._t = setTimeout(() => {
-        try{ speechSynthesis.speak(u); }catch(e){}
+        try{ speechSynthesis.speak(u); }catch(e){ warnNoSpeech(); }
+        // 兩秒內都沒有開始朗讀，就當作這台手機發不出聲音
+        setTimeout(() => { if(!TTS.everSpoke) warnNoSpeech(); }, 2000);
       }, 80);
-    }catch(e){}
+    }catch(e){ warnNoSpeech(); }
   }
 };
+
+/* 沒聲音時給一個看得懂的提示，只出現一次 */
+function warnNoSpeech(){
+  if(TTS.everSpoke || TTS.warned) return;
+  TTS.warned = true;
+  const box = document.getElementById('speechWarn');
+  box.classList.add('on');
+  // 提示框是浮在畫面上的，要把頁面底部撐開，否則會壓住最下面的按鈕
+  document.body.style.paddingBottom = (box.offsetHeight + 24) + 'px';
+}
+function hideSpeechWarn(){
+  document.getElementById('speechWarn').classList.remove('on');
+  document.body.style.paddingBottom = '';
+}
 TTS.init();
 function say(t, r){ TTS.speak(t, r); }
 
@@ -1313,6 +1357,7 @@ document.getElementById('noticeOk').addEventListener('click', () => {
   S.hideNotice = 1; save();
   document.getElementById('soundNotice').style.display = 'none';
 });
+document.getElementById('speechWarnOk').addEventListener('click', hideSpeechWarn);
 
 /* 啟動 */
 show('home');
