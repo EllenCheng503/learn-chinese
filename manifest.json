@@ -1,0 +1,16 @@
+{
+  "name": "學國字 ㄅㄆㄇ",
+  "short_name": "學國字",
+  "description": "長輩友善的台灣繁體中文與注音學習小工具",
+  "lang": "zh-Hant-TW",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F6F1E7",
+  "theme_color": "#F6F1E7",
+  "icons": [
+    { "src": "icon-180.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}
