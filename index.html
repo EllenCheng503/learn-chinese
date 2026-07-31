@@ -1251,8 +1251,20 @@ function renderLessons(li){
 let session = null;
 const shuffle = a => { const x = a.slice(); for(let i=x.length-1;i>0;i--){const j=(Math.random()*(i+1))|0;[x[i],x[j]]=[x[j],x[i]];} return x; };
 
+/* 一個詞裡的每個字都要練到。
+   原本只取第一個字，「爸爸」練了前面那個、後面那個沒練，兩字詞等於只練一半。 */
+function writeQueue(words){
+  const q = [], seen = {};
+  words.forEach(w => Array.from(w.w).forEach((c, i) => {
+    if(seen[c]) return;          // 「爸爸」兩個字一樣，描第二次沒有新東西
+    seen[c] = 1;
+    q.push({w:w, c:c, i:i});
+  }));
+  return q;
+}
 function startLesson(l){
   session = {kind:'lesson', lesson:l, words:l.words.slice(), i:0, stage:'learn',
+             wq:writeQueue(l.words), wi:0,
              queue:[], wrong:[], right:0, asked:0};
   go('learn'); renderLearn(true);
 }
@@ -1260,7 +1272,8 @@ function startReview(){
   const keys = dueWords();
   if(!keys.length) return;
   const words = shuffle(keys).slice(0, 12).map(k => WORD_BY_KEY[k]);
-  session = {kind:'review', words:words, i:0, stage:'quiz', queue:[], wrong:[], right:0, asked:0};
+  session = {kind:'review', words:words, i:0, stage:'quiz',
+             wq:writeQueue(words), wi:0, queue:[], wrong:[], right:0, asked:0};
   buildQuiz(words, 1);
   go('quiz'); renderQ();
 }
@@ -1296,7 +1309,7 @@ function renderLearn(speakIt){
 document.getElementById('lSpeak').addEventListener('click', () => say(session.words[session.i].w));
 document.getElementById('lNext').addEventListener('click', () => {
   if(session.i < session.words.length-1){ session.i++; renderLearn(true); return; }
-  if(Number(S.doWrite)){ session.i = 0; session.stage = 'write'; go('write'); renderWrite(); }
+  if(Number(S.doWrite)){ session.wi = 0; session.stage = 'write'; go('write'); renderWrite(); }
   else { beginQuiz(); }
 });
 
@@ -1324,21 +1337,28 @@ pad.addEventListener('pointermove', e => { if(!drawing) return; e.preventDefault
 function clearPad(){ ctx.clearRect(0,0,pad.width,pad.height); }
 
 function renderWrite(){
-  const w = session.words[session.i];
-  const c = Array.from(w.w)[0];
-  dots(session.words.length, session.i, document.getElementById('wDots'));
-  document.getElementById('wLabel').innerHTML = w.w + '　<span style="color:var(--brand)">' + zhHtml(w) + '</span>';
+  const it = session.wq[session.wi];
+  if(!it){ beginQuiz(); return; }
+  const w = it.w, c = it.c;
+  dots(session.wq.length, session.wi, document.getElementById('wDots'));
+  // 在整個詞裡把現在要寫的那個字標出來，媽媽才知道寫的是哪一個
+  const chars = Array.from(w.w).map((x, i) =>
+    '<span style="' + (i === it.i
+      ? 'color:var(--ink);border-bottom:4px solid var(--brand);padding:0 2px'
+      : 'color:#B7AE9C') + '">' + x + '</span>').join('');
+  document.getElementById('wLabel').innerHTML =
+    chars + '　<span style="color:var(--brand)">' + (w.z[it.i] || '') + '</span>';
   const g = document.getElementById('guideChar');
   g.textContent = c;
   g.className = 'guide-char' + (guideLevel===1?' faint':guideLevel===2?' off':'');
   document.getElementById('wNext').textContent =
-    (session.i === session.words.length-1) ? '寫好了，開始小考 →' : '寫好了 →';
+    (session.wi === session.wq.length-1) ? '寫好了，開始小考 →' : '寫好了 →';
   clearPad();
   requestAnimationFrame(sizePad);
-  if(session.i === 0){
-    tip('用手指照著描一次。寫好了按綠色的按鈕。', [c]);
+  if(session.wi === 0){
+    tip('用手指照著描一次。寫好了按綠色的按鈕。', [c, w.w]);
   }else{
-    sayAll([c]);
+    sayAll([c, w.w]);
   }
 }
 document.getElementById('wClear').addEventListener('click', clearPad);
@@ -1349,7 +1369,7 @@ document.getElementById('wGuide').addEventListener('click', () => {
   g.className = 'guide-char' + (guideLevel===1?' faint':guideLevel===2?' off':'');
 });
 document.getElementById('wNext').addEventListener('click', () => {
-  if(session.i < session.words.length-1){ session.i++; renderWrite(); }
+  if(session.wi < session.wq.length-1){ session.wi++; renderWrite(); }
   else beginQuiz();
 });
 
