@@ -433,6 +433,26 @@ select{width:100%;min-height:60px;font-size:calc(16px * var(--scale));font-famil
     <div class="acts"><button class="btn btn-line" data-go="home" type="button">回首頁</button></div>
   </section>
 
+  <!-- ===== 休息一下 ===== -->
+  <section class="screen" id="s-break">
+    <div class="body">
+      <div class="face">🍵</div>
+      <div class="line">練了 30 分鐘了<br>休息一下</div>
+      <div class="line" id="bkCount"
+           style="font-size:clamp(40px,9vh,72px);color:var(--brand);font-variant-numeric:tabular-nums">10:00</div>
+      <div class="note" style="text-align:center;font-size:calc(17px * var(--scale))">
+        站起來走一走、喝點水，眼睛也休息一下。
+      </div>
+    </div>
+    <div class="acts">
+      <div class="note" id="bkWait" style="text-align:center;font-size:calc(17px * var(--scale))">
+        把手機放下，時間到了再回來就好。
+      </div>
+      <button class="btn btn-main big" id="bkDone" type="button" style="display:none">▶ 繼續練習</button>
+      <button class="btn btn-line" id="bkMore" type="button">還是想再練五分鐘</button>
+    </div>
+  </section>
+
   <!-- ===== 象形字 ===== -->
   <section class="screen" id="s-picto">
     <div class="body scroll">
@@ -496,6 +516,11 @@ select{width:100%;min-height:60px;font-size:calc(16px * var(--scale));font-famil
       <div class="seg" id="segZhuyin">
         <button data-v="1" type="button">顯示</button>
         <button data-v="0" type="button">不顯示</button>
+      </div>
+      <div class="lbl">練 30 分鐘要不要提醒休息</div>
+      <div class="seg" id="segBreak">
+        <button data-v="1" type="button">要</button>
+        <button data-v="0" type="button">不用</button>
       </div>
       <div class="lbl">每一課要不要練寫字</div>
       <div class="seg" id="segWrite">
@@ -1293,7 +1318,8 @@ const KEY = 'twlearn';
 const OLD_KEYS = ['twlearn.v2', 'twlearn.v1'];   // 曾經用過的名字，只讀不寫
 const DEF = {
   ver:3,
-  scale:1.15, rate:0.75, showZhuyin:1, doWrite:1, voiceURI:'', hideNotice:0,
+  scale:1.15, rate:0.75, showZhuyin:1, doWrite:1, breakOn:1, voiceURI:'', hideNotice:0,
+  useMs:0, useAt:0,
   cards:{}, done:[], streak:0, last:'', todayCount:0, correct:0, wrong:0,
   lastBackup:0
 };
@@ -1576,7 +1602,7 @@ const SC = {
   home:['s-home','學國字'], map:['s-map','課程地圖'], lessons:['s-lessons','選一課'],
   learn:['s-learn','看圖學字'], write:['s-write','寫字練習'], quiz:['s-quiz','小考'],
   result:['s-result','練習結果'], zhtable:['s-zhtable','注音符號表'],
-  picto:['s-picto','象形字'],
+  picto:['s-picto','象形字'], brk:['s-break','休息一下'],
   progress:['s-progress','我的紀錄'], settings:['s-settings','設定']
 };
 let stack = ['home'];
@@ -1584,7 +1610,8 @@ function show(n){
   Object.keys(SC).forEach(k => document.getElementById(SC[k][0]).classList.remove('on'));
   document.getElementById(SC[n][0]).classList.add('on');
   document.getElementById('title').textContent = SC[n][1];
-  document.getElementById('backBtn').style.visibility = (n === 'home') ? 'hidden' : 'visible';
+  document.getElementById('backBtn').style.visibility =
+    (n === 'home' || n === 'brk') ? 'hidden' : 'visible';
 }
 function go(n){ if(stack[stack.length-1] !== n) stack.push(n); show(n); }
 function home(){ stack = ['home']; renderHome(); show('home'); }
@@ -2155,8 +2182,9 @@ segInit('segScale','scale', applyScale);
 segInit('segRate','rate', () => say('現在的說話速度'));
 segInit('segZhuyin','showZhuyin');
 segInit('segWrite','doWrite');
+segInit('segBreak','breakOn', () => { if(!Number(S.breakOn)) clearBreak(); });
 function renderSettings(){
-  ['segScale|scale','segRate|rate','segZhuyin|showZhuyin','segWrite|doWrite']
+  ['segScale|scale','segRate|rate','segZhuyin|showZhuyin','segWrite|doWrite','segBreak|breakOn']
     .forEach(s => { const p = s.split('|'); markSeg(p[0], p[1]); });
   renderVoiceUI();
   renderBackupInfo();
@@ -2250,6 +2278,87 @@ function renderBackupInfo(){
   const days = Math.floor((Date.now() - S.lastBackup) / DAY);
   el.textContent = '上次備份：' + (days <= 0 ? '今天' : days + ' 天前');
 }
+
+/* ============================================================
+   休息提醒
+   連續用 30 分鐘就提醒休息 10 分鐘。
+   只計算「螢幕真的在看」的時間：切到背景、放著不動都不算，
+   不然放在桌上一小時回來就被叫去休息，很莫名其妙。
+   ============================================================ */
+const BREAK_AFTER = 30*60*1000;   // 練多久要休息
+const BREAK_LEN   = 10*60*1000;   // 休息多久
+const SNOOZE      = 5*60*1000;    // 「再練五分鐘」
+const GAP_MAX     = 90*1000;      // 兩次計時間隔超過這個就當作中間離開了
+
+let breakReturn = 'home', breakEndAt = 0, breakTimer = null, saveAt = 0;
+
+function clearBreak(){
+  S.useMs = 0; S.useAt = Date.now(); save();
+}
+function tickUse(){
+  if(document.visibilityState !== 'visible') return;
+  const now = Date.now();
+  if(S.useAt && now - S.useAt <= GAP_MAX) S.useMs = (S.useMs || 0) + (now - S.useAt);
+  S.useAt = now;
+  if(now - saveAt > 60000){ saveAt = now; save(); }
+  if(Number(S.breakOn) && S.useMs >= BREAK_AFTER &&
+     stack[stack.length-1] !== 'brk') showBreak();
+}
+setInterval(tickUse, 10000);
+document.addEventListener('visibilitychange', () => {
+  if(document.visibilityState === 'visible') S.useAt = Date.now();   // 回來時重新起算
+  else save();
+});
+
+function fmt(ms){
+  const t = Math.max(0, Math.ceil(ms/1000));
+  return Math.floor(t/60) + ':' + String(t%60).padStart(2,'0');
+}
+function showBreak(){
+  breakReturn = stack[stack.length-1];
+  breakEndAt = Date.now() + BREAK_LEN;
+  paintBreak.said = false;
+  document.getElementById('bkDone').style.display = 'none';
+  document.getElementById('bkWait').style.display = '';
+  stack.push('brk'); show('brk');
+  paintBreak();
+  clearInterval(breakTimer);
+  breakTimer = setInterval(paintBreak, 1000);
+  tip('已經練了三十分鐘，休息一下。把手機放下，站起來走一走、喝點水。十分鐘以後再回來。');
+}
+function paintBreak(){
+  const left = breakEndAt - Date.now();
+  document.getElementById('bkCount').textContent = fmt(left);
+  if(left <= 0){
+    clearInterval(breakTimer); breakTimer = null;
+    document.getElementById('bkCount').textContent = '休息好了';
+    document.getElementById('bkDone').style.display = '';
+    document.getElementById('bkWait').style.display = 'none';
+    if(!paintBreak.said){ paintBreak.said = true; tip('休息夠了，可以再來練了。'); }
+  }
+}
+function endBreak(){
+  clearInterval(breakTimer); breakTimer = null;
+  paintBreak.said = false;
+  clearBreak();
+  if(stack[stack.length-1] === 'brk') stack.pop();
+  const n = stack[stack.length-1] || 'home';
+  if(n === 'home') renderHome();
+  show(n);
+}
+document.getElementById('bkDone').addEventListener('click', endBreak);
+document.getElementById('bkMore').addEventListener('click', () => {
+  // 再練五分鐘：把計時往回撥，五分鐘後會再提醒一次
+  S.useMs = BREAK_AFTER - SNOOZE; S.useAt = Date.now(); save();
+  clearInterval(breakTimer); breakTimer = null;
+  paintBreak.said = false;
+  if(stack[stack.length-1] === 'brk') stack.pop();
+  show(stack[stack.length-1] || 'home');
+});
+
+/* 這次打開離上次超過休息時間，就重新起算 */
+if(!S.useAt || Date.now() - S.useAt > BREAK_LEN) S.useMs = 0;
+S.useAt = Date.now();
 
 /* 啟動 */
 checkStorage();
