@@ -56,7 +56,15 @@ button{
   background:var(--card);font-size:calc(16px * var(--scale));font-weight:700;
 }
 .topbar h1{flex:1;text-align:center;font-size:calc(19px * var(--scale));font-weight:800;}
-.topbar .right{min-width:82px;text-align:right;font-size:calc(15px * var(--scale));color:var(--ink-soft);font-weight:700;}
+.btn-say{
+  min-width:82px;min-height:48px;border:2px solid var(--line);border-radius:12px;
+  background:var(--card);font-size:calc(20px * var(--scale));
+}
+.btn-say:active{background:#EFE8DA;}
+/* 小考進度用長條，不用數字 —— 不認字也看得懂還剩多少 */
+.qbar{flex:none;height:10px;background:#E7DFCE;border-radius:99px;overflow:hidden;}
+.qbar>i{display:block;height:100%;background:var(--brand);border-radius:99px;transition:width .25s;}
+.streak-line{font-size:calc(15px * var(--scale));color:var(--ink-soft);margin-top:4px;}
 
 .screen{display:none;flex:1;min-height:0;flex-direction:column;padding:10px 12px 12px;gap:8px;}
 .screen.on{display:flex;}
@@ -260,7 +268,7 @@ select{width:100%;min-height:60px;font-size:calc(16px * var(--scale));font-famil
   <header class="topbar">
     <button class="btn-back" id="backBtn" type="button">← 回上頁</button>
     <h1 id="title">學國字</h1>
-    <div class="right" id="topRight"></div>
+    <button class="btn-say" id="btnSay" type="button" aria-label="再說一次">🔊</button>
   </header>
 
   <div id="storeWarn" role="alert">
@@ -285,6 +293,7 @@ select{width:100%;min-height:60px;font-size:calc(16px * var(--scale));font-famil
         <div class="sub" id="hProgress">第 1 課 / 共 8 課</div>
         <div class="topic" id="hTopic">家人</div>
         <div class="bar"><i id="hBar"></i></div>
+        <div class="streak-line" id="hStreak"></div>
       </div>
     </div>
     <div class="acts">
@@ -354,6 +363,7 @@ select{width:100%;min-height:60px;font-size:calc(16px * var(--scale));font-famil
   <!-- ===== 測驗 ===== -->
   <section class="screen" id="s-quiz">
     <div class="body">
+      <div class="qbar"><i id="qBar"></i></div>
       <div class="prompt" id="qPrompt"></div>
       <div class="opts" id="qOpts"></div>
       <div class="fb" id="qFb"></div>
@@ -970,27 +980,61 @@ const TTS = {
     };
     return v.slice().sort((a,b) => rank(a)-rank(b))[0];
   },
-  speak(text, rate){
-    if(!text) return;
+  mk(text, rate){
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = (this.voice && this.voice.lang) ? this.voice.lang : 'zh-TW';
+    if(this.voice) u.voice = this.voice;
+    u.rate = rate || S.rate; u.pitch = 1; u.volume = 1;
+    u.onstart = () => { TTS.everSpoke = true; };
+    u.onerror = () => { warnNoSpeech(); };
+    return u;
+  },
+  /* 依序把好幾句話唸完。
+     說明和字要一句接一句，不能用 cancel 互相蓋掉，
+     不然媽媽只會聽到後面半句。 */
+  speakAll(list, rate){
+    const items = (list || []).filter(t => t && String(t).trim());
+    if(!items.length) return;
     if(!('speechSynthesis' in window)){ warnNoSpeech(); return; }
     try{
       speechSynthesis.cancel();
-      const u = new SpeechSynthesisUtterance(text);
-      u.lang = (this.voice && this.voice.lang) ? this.voice.lang : 'zh-TW';
-      if(this.voice) u.voice = this.voice;
-      u.rate = rate || S.rate; u.pitch = 1; u.volume = 1;
-      u.onstart = () => { TTS.everSpoke = true; };
-      u.onerror = () => { warnNoSpeech(); };
+      this.seq++;
+      const mine = this.seq;
+      let i = 0;
+      const next = () => {
+        if(mine !== TTS.seq || i >= items.length) return;   // 已經被新的蓋過就停
+        const u = TTS.mk(items[i++], rate);
+        u.onend = next;
+        try{ speechSynthesis.speak(u); }catch(e){ warnNoSpeech(); }
+      };
       clearTimeout(this._t);
       this._t = setTimeout(() => {
-        try{ speechSynthesis.speak(u); }catch(e){ warnNoSpeech(); }
+        next();
         setTimeout(() => { if(!TTS.everSpoke) warnNoSpeech(); }, 2200);
       }, 80);
     }catch(e){ warnNoSpeech(); }
-  }
+  },
+  seq:0,
+  speak(text, rate){ this.speakAll([text], rate); }
 };
 TTS.init();
 function say(t, r){ TTS.speak(t, r); }
+function sayAll(list, r){ TTS.speakAll(list, r); }
+
+/* ============================================================
+   語音導引
+   媽媽不太認字，所以畫面上的字對她等於不存在。
+   每進一個畫面就先講一次「現在要做什麼」，
+   右上角的喇叭鍵可以隨時再聽一次。
+   ============================================================ */
+let lastTip = '';
+function tip(text, extra){
+  lastTip = text || '';
+  sayAll([text].concat(extra || []));
+}
+document.getElementById('btnSay').addEventListener('click', () => {
+  if(lastTip) say(lastTip);
+});
 function warnNoSpeech(){
   if(TTS.everSpoke || TTS.warned) return;
   TTS.warned = true;
@@ -1080,7 +1124,11 @@ function renderHome(){
   rb.disabled = d === 0;
   rb.innerHTML = d ? ('🔁 今日複習<span class="sub">' + d + ' 個該複習的字</span>')
                    : '🔁 今日複習<span class="sub">目前沒有要複習的</span>';
-  document.getElementById('topRight').textContent = S.streak ? ('🔥' + S.streak + '天') : '';
+  document.getElementById('hStreak').textContent = S.streak ? ('🔥 連續練習 ' + S.streak + ' 天') : '';
+  const due = d;
+  tip('現在是' + lv.n + '，第 ' + (l.idx+1) + ' 課，' + l.topic + '。' +
+      '要上課，請按下面綠色的大按鈕。' +
+      (due ? ('要複習以前學過的字，按下面黃色的按鈕。') : ''));
 }
 document.getElementById('goLesson').addEventListener('click', () => startLesson(nextLesson()));
 document.getElementById('goReview').addEventListener('click', startReview);
@@ -1106,6 +1154,7 @@ function renderMap(){
     else b.addEventListener('click', () => say('先把前面的等級學完，這一級才會打開'));
     box.appendChild(b);
   });
+  tip('這是課程表，從上面往下一級一級學。按你要學的那一級。');
 }
 function renderLessons(li){
   SC.lessons[1] = LEVELS[li].n;
@@ -1121,6 +1170,7 @@ function renderLessons(li){
     b.addEventListener('click', () => startLesson(l));
     box.appendChild(b);
   });
+  tip('這是' + LEVELS[li].n + '的課，按你要上的那一課。');
 }
 
 /* ============================================================
@@ -1167,7 +1217,11 @@ function renderLearn(speakIt){
     (session.i === session.words.length-1) ? (Number(S.doWrite) ? '開始練寫 →' : '開始小考 →') : '下一個 →';
   card(w.w);
   save();
-  if(speakIt) say(w.w);
+  if(session.i === 0){
+    tip('現在開始上課。看著圖片，我唸一次給你聽。聽完按下面綠色的按鈕，換下一個。', [w.w, w.w]);
+  }else if(speakIt){
+    sayAll([w.w, w.w]);
+  }
 }
 document.getElementById('lSpeak').addEventListener('click', () => say(session.words[session.i].w));
 document.getElementById('lNext').addEventListener('click', () => {
@@ -1211,7 +1265,11 @@ function renderWrite(){
     (session.i === session.words.length-1) ? '寫好了，開始小考 →' : '寫好了 →';
   clearPad();
   requestAnimationFrame(sizePad);
-  say(c);
+  if(session.i === 0){
+    tip('現在來練習寫字。用手指在格子裡，照著淡色的字描一次。寫好了按下面綠色的按鈕。', [c]);
+  }else{
+    sayAll([c]);
+  }
 }
 document.getElementById('wClear').addEventListener('click', clearPad);
 document.getElementById('wGuide').addEventListener('click', () => {
@@ -1264,19 +1322,32 @@ function renderQ(){
   document.getElementById('qFb').textContent = '';
   document.getElementById('qFb').className = 'fb';
   document.getElementById('qNext').style.visibility = 'hidden';
-  document.getElementById('topRight').textContent = (session.total - session.queue.length + 1) + '/' + session.total;
+  const doneN = session.total - session.queue.length;
+  document.getElementById('qBar').style.width = (doneN/session.total*100) + '%';
+  // 第一題先說明規則；同樣題型連續出現時就不再重複唸指令，不然聽十遍會煩
+  const intro = (doneN === 0) ? '現在來考一下。每一題有三個答案，選一個你覺得對的。' : '';
+  const repeatType = (session.lastType === item.t);
+  session.lastType = item.t;
+  const ask = (t, extra) => {
+    lastTip = t;                                  // 喇叭鍵永遠講完整指令
+    const head = repeatType ? intro : (intro + t);
+    sayAll([head].concat(extra || []));
+  };
 
   if(item.t === 'sound2char'){
     P.innerHTML = '<span class="lab">聽聽看，是哪一個？</span><span class="big-pic">🔊</span>' +
       '<button class="btn btn-line" id="replay" type="button" style="min-height:46px;font-size:calc(15px * var(--scale));width:auto;padding:4px 16px">再唸一次</button>';
     document.getElementById('replay').addEventListener('click', ev => { ev.stopPropagation(); say(w.w); });
-    setTimeout(() => say(w.w), 300);
+    ask('聽聽看，是哪一個？', [w.w, w.w]);
   }else if(item.t === 'pic2char'){
     P.innerHTML = '<span class="lab">這張圖是什麼？</span><span class="big-pic">' + w.p + '</span>';
+    ask('看這張圖，是下面哪一個？');
   }else if(item.t === 'char2zhuyin'){
     P.innerHTML = '<span class="lab">這個詞的注音是？</span><span class="big-char">' + w.w + '</span>';
+    ask('上面這個詞的注音，是下面哪一個？');
   }else{
     P.innerHTML = '<span class="lab">這個注音是哪一個詞？</span><span class="big-zhu">' + zhHtml(w) + '</span>';
+    ask('上面這個注音，是下面哪一個詞？');
   }
 
   const box = document.getElementById('qOpts');
@@ -1307,7 +1378,7 @@ function answer(btn, chosen, correct, item){
     fb.innerHTML = '答對了 👏　' + correct.w + '（' + zhHtml(correct) + '）';
     fb.className = 'fb good';
     beep(true);
-    setTimeout(() => say(correct.w), 250);
+    setTimeout(() => sayAll(['答對了', correct.w]), 250);
     session.queue.shift();
   }else{
     btn.classList.add('bad');
@@ -1315,7 +1386,7 @@ function answer(btn, chosen, correct, item){
     fb.innerHTML = '正確答案是 <b>' + correct.w + '</b>（' + zhHtml(correct) + '）';
     fb.className = 'fb bad';
     beep(false);
-    setTimeout(() => say(correct.w), 250);
+    setTimeout(() => sayAll(['不對喔，答案是', correct.w, correct.w]), 250);
     if(session.wrong.indexOf(correct.w) < 0) session.wrong.push(correct.w);
     // 答錯的題目放回後面再考一次（錯誤要當場修正才記得住）
     const miss = session.queue.shift();
@@ -1328,7 +1399,6 @@ document.getElementById('qNext').addEventListener('click', renderQ);
 
 /* ---- 結算 ---- */
 function finish(){
-  document.getElementById('topRight').textContent = '';
   const pct = session.asked ? Math.round(session.right/session.asked*100) : 0;
   const stars = pct>=95?5:pct>=85?4:pct>=70?3:pct>=50?2:1;
   if(session.kind === 'lesson' && S.done.indexOf(session.lesson.id) < 0){
@@ -1356,7 +1426,11 @@ function finish(){
   ab.style.display = session.kind === 'lesson' ? '' : 'none';
   ab.onclick = () => startLesson(session.lesson);
   go('result');
-  setTimeout(() => say(pct>=85 ? '好厲害' : pct>=60 ? '不錯喔，再練一次會更熟' : '沒關係，慢慢來'), 350);
+  const praise = pct>=85 ? '好厲害' : pct>=60 ? '不錯喔' : '沒關係，慢慢來';
+  tip(praise + '。這一次答對 ' + session.right + ' 題。' +
+      (session.kind === 'lesson'
+        ? '要上下一課，按下面綠色的按鈕。想再練一次這一課，按白色的按鈕。'
+        : '要繼續複習，按下面綠色的按鈕。'));
 }
 
 /* ============================================================
@@ -1377,6 +1451,7 @@ function buildZh(){
   };
   fill('zI', INITIALS); fill('zM', MEDIALS); fill('zF', FINALS); fill('zT', TONES, true);
   selZh(zCur, false, true);
+  tip('這是注音符號表。按任何一個符號，我就唸它的例字給你聽。');
 }
 function selZh(it, tone, silent){
   zCur = it;
@@ -1424,6 +1499,8 @@ function renderProgress(){
   const el = document.getElementById('stNote');
   el.style.whiteSpace = 'pre-line';
   el.textContent = note;
+  tip('這是你的紀錄。今天練了 ' + (S.todayCount||0) + ' 題，' +
+      '已經連續練習 ' + (S.streak||0) + ' 天。');
 }
 document.getElementById('resetBtn').addEventListener('click', () => {
   if(confirm('確定要清除全部學習紀錄嗎？清除後無法復原。')){
@@ -1457,6 +1534,7 @@ function renderSettings(){
     .forEach(s => { const p = s.split('|'); markSeg(p[0], p[1]); });
   renderVoiceUI();
   renderBackupInfo();
+  tip('這是設定。可以調字的大小，還有說話的速度。');
 }
 function renderVoiceUI(){
   const info = document.getElementById('voiceInfo'), sel = document.getElementById('voiceSelect');
