@@ -24,7 +24,7 @@
   --scale: 1;
   --bg:#F6F1E7; --card:#FFFFFF; --ink:#23201B; --ink-soft:#5C554A;
   --line:#DCD3C2; --brand:#1F6F5C; --brand-dark:#175647;
-  --gold:#E9A319; --ok:#1F7A3D; --ok-bg:#E4F4E8;
+  --gold:#E9A319; --blue:#1F5E8F; --ok:#1F7A3D; --ok-bg:#E4F4E8;
   --no:#B4322A; --no-bg:#FBE7E5; --lock:#B7AE9C;
   --r:16px; --shadow:0 3px 10px rgba(60,48,30,.10);
 }
@@ -87,6 +87,8 @@ button{
 .btn-line{background:var(--card);border-color:var(--line);}
 .btn-line:active{background:#EFE8DA;}
 .btn-gold{background:var(--gold);color:#2B1D00;}
+.btn-blue{background:var(--blue);color:#fff;}
+.btn-blue:active{background:#17466B;}
 .btn.big{min-height:84px;font-size:calc(24px * var(--scale));}
 .btn:disabled{opacity:.45;}
 .btn{flex-wrap:wrap;}
@@ -319,6 +321,7 @@ select{width:100%;min-height:60px;font-size:calc(16px * var(--scale));font-famil
     <div class="acts">
       <button class="btn btn-main big" id="goLesson" type="button">▶ 開始上課</button>
       <button class="btn btn-gold" id="goReview" type="button">🔁 今日複習</button>
+      <button class="btn btn-blue" id="goWeak" type="button">✏️ 練常錯的字</button>
       <div class="tiles">
         <button class="tile" data-go="map" type="button"><span class="i">📚</span><span class="t">課程</span></button>
         <button class="tile" data-go="zhtable" type="button"><span class="i">ㄅ</span><span class="t">注音表</span></button>
@@ -461,6 +464,9 @@ select{width:100%;min-height:60px;font-size:calc(16px * var(--scale));font-famil
         <div class="stat"><b id="stLearned">0</b><span>學過的字詞</span></div>
         <div class="stat"><b id="stRate">—</b><span>答對率</span></div>
       </div>
+      <div class="sec" id="stWeakTitle">最常錯的字</div>
+      <div class="weak" id="stWeak" style="justify-content:flex-start"></div>
+      <button class="btn btn-blue" id="stWeakGo" type="button" style="margin:8px 0 4px">✏️ 練這些字</button>
       <div class="sec">熟練度分布</div>
       <div id="stBoxes"></div>
       <div class="note" id="stNote"></div>
@@ -1387,11 +1393,23 @@ function checkStorage(){
 /* 離開或切到背景時再存一次，避免最後幾題沒寫進去 */
 ['pagehide','visibilitychange','blur'].forEach(ev =>
   window.addEventListener(ev, () => { if(document.visibilityState !== 'visible' || ev !== 'visibilitychange') save(); }));
-function card(k){ return S.cards[k] || (S.cards[k] = {l:0, d:0, s:0, w:0}); }
+function card(k){
+  const c = S.cards[k] || (S.cards[k] = {l:0, d:0, s:0, w:0, wk:0});
+  // 舊資料沒有 wk，用歷史錯誤次數推一個起始值
+  if(c.wk === undefined) c.wk = Math.min((c.w || 0) * 2, 6);
+  return c;
+}
 function grade(k, ok){
   const c = card(k); c.s++;
-  if(ok){ c.l = Math.min(MAXBOX, c.l + 1); S.correct++; }
-  else { c.l = Math.max(0, c.l - 2); c.w++; S.wrong++; }
+  if(ok){
+    c.l = Math.min(MAXBOX, c.l + 1);
+    c.wk = Math.max(0, c.wk - 1);   // 答對就慢慢退出弱點清單
+    S.correct++;
+  }else{
+    c.l = Math.max(0, c.l - 2);
+    c.w++; c.wk = Math.min(8, c.wk + 2);
+    S.wrong++;
+  }
   c.d = Date.now() + INTERVALS[c.l];
   S.todayCount++;
   save();
@@ -1407,6 +1425,12 @@ touchDay();
 function seenWords(){ return Object.keys(S.cards).filter(k => WORD_BY_KEY[k]); }
 function dueWords(){ const n = Date.now(); return seenWords().filter(k => S.cards[k].d <= n); }
 function nextLesson(){ return LESSONS.find(l => S.done.indexOf(l.id) < 0) || LESSONS[LESSONS.length-1]; }
+/* 常錯的字：wk 大於 0 的，錯越多排越前面 */
+function weakWords(){
+  return seenWords()
+    .filter(k => card(k).wk > 0)
+    .sort((a,b) => S.cards[b].wk - S.cards[a].wk || S.cards[b].w - S.cards[a].w);
+}
 function lessonDone(id){ return S.done.indexOf(id) >= 0; }
 /* 所有等級一律開放。
    覺得太簡單就自己往前跳，不要用鎖擋住學習者。 */
@@ -1604,13 +1628,20 @@ function renderHome(){
   rb.disabled = d === 0;
   rb.innerHTML = d ? ('🔁 今日複習<span class="sub">' + d + ' 個該複習的字</span>')
                    : '🔁 今日複習<span class="sub">目前沒有要複習的</span>';
+  const wk = weakWords().length;
+  const wb = document.getElementById('goWeak');
+  wb.disabled = wk === 0;
+  wb.innerHTML = wk ? ('✏️ 練常錯的字<span class="sub">有 ' + wk + ' 個常錯的</span>')
+                    : '✏️ 練常錯的字<span class="sub">目前沒有錯的字</span>';
   document.getElementById('hStreak').textContent = S.streak ? ('🔥 連續練習 ' + S.streak + ' 天') : '';
   const due = d;
   tip(lv.n + '，第' + cn(l.idx+1) + '課，' + l.topic + '。要開始，按綠色的按鈕。' +
-      (due ? '要複習，按黃色的。' : ''));
+      (due ? '要複習，按黃色的。' : '') +
+      (wk ? '要練常常寫錯的字，按藍色的。' : ''));
 }
 document.getElementById('goLesson').addEventListener('click', () => startLesson(nextLesson()));
 document.getElementById('goReview').addEventListener('click', startReview);
+document.getElementById('goWeak').addEventListener('click', startWeak);
 
 /* ============================================================
    課程地圖
@@ -1683,6 +1714,18 @@ function startReview(){
   session = {kind:'review', words:words, i:0, stage:'quiz',
              wq:writeQueue(words), wi:0, queue:[], wrong:[], right:0, asked:0};
   buildQuiz(words, 1);
+  go('quiz'); renderQ();
+}
+
+/* 弱點考試：只考錯過的字，錯最多的先考。
+   跟「今日複習」不同 —— 那個看的是時間到了沒，這個看的是錯過幾次。 */
+function startWeak(){
+  const keys = weakWords();
+  if(!keys.length) return;
+  const words = keys.slice(0, 10).map(k => WORD_BY_KEY[k]);
+  session = {kind:'weak', words:words, i:0, stage:'quiz',
+             wq:writeQueue(words), wi:0, queue:[], wrong:[], right:0, asked:0};
+  buildQuiz(words, 2);
   go('quiz'); renderQ();
 }
 
@@ -1932,6 +1975,10 @@ function finish(){
     const nx = nextLesson();
     nb.innerHTML = '▶ 下一課<span class="sub">' + nx.topic + '</span>';
     nb.onclick = () => startLesson(nx);
+  }else if(session.kind === 'weak'){
+    const n = weakWords().length;
+    nb.innerHTML = n ? ('✏️ 再練常錯的<span class="sub">還有 ' + n + ' 個</span>') : '回首頁';
+    nb.onclick = () => { if(weakWords().length) startWeak(); else home(); };
   }else{
     const d = dueWords().length;
     nb.innerHTML = d ? ('🔁 繼續複習<span class="sub">還有 ' + d + ' 個</span>') : '回首頁';
@@ -1943,7 +1990,9 @@ function finish(){
   go('result');
   const praise = pct>=85 ? '好厲害' : pct>=60 ? '不錯喔' : '沒關係，慢慢來';
   tip(praise + '，答對' + cn(session.right) + '題。' +
-      (session.kind === 'lesson' ? '要上下一課，按綠色的按鈕。' : '要繼續複習，按綠色的按鈕。'));
+      (session.kind === 'lesson' ? '要上下一課，按綠色的按鈕。'
+       : session.kind === 'weak' ? '要再練常錯的字，按綠色的按鈕。'
+       : '要繼續複習，按綠色的按鈕。'));
 }
 
 /* ============================================================
@@ -2025,6 +2074,26 @@ function selPicto(ch, silent){
 function renderProgress(){
   touchDay();
   const seen = seenWords();
+  // 常錯的字：讓家人一眼看出她卡在哪裡
+  const wk = weakWords();
+  const wt = document.getElementById('stWeakTitle');
+  const wl = document.getElementById('stWeak');
+  const wg = document.getElementById('stWeakGo');
+  if(wk.length){
+    wt.style.display = ''; wl.style.display = ''; wg.style.display = '';
+    wl.innerHTML = '';
+    wk.slice(0, 12).forEach(k => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.style.cssText = 'background:var(--no-bg);border:2px solid var(--no);' +
+        'border-radius:10px;padding:4px 10px;font-size:calc(19px * var(--scale));color:var(--no);font-weight:700';
+      b.innerHTML = k + '<span style="font-size:calc(13px * var(--scale));opacity:.8"> 錯' +
+        (S.cards[k].w || 0) + '次</span>';
+      b.addEventListener('click', () => sayAll([k, {t:WORD_BY_KEY[k].z.join(''), r:S.rate}]));
+      wl.appendChild(b);
+    });
+  }else{
+    wt.style.display = 'none'; wl.style.display = 'none'; wg.style.display = 'none';
+  }
   const tot = S.correct + S.wrong;
   document.getElementById('stToday').textContent = S.todayCount || 0;
   document.getElementById('stStreak').textContent = S.streak || 0;
@@ -2055,8 +2124,10 @@ function renderProgress(){
   const el = document.getElementById('stNote');
   el.style.whiteSpace = 'pre-line';
   el.textContent = note;
-  tip('這是你的紀錄。今天練了' + cn(S.todayCount||0) + '題。');
+  tip('這是你的紀錄。今天練了' + cn(S.todayCount||0) + '題。' +
+      (wk.length ? '有' + cn(wk.length) + '個字常常錯，要練的話按藍色的按鈕。' : ''));
 }
+document.getElementById('stWeakGo').addEventListener('click', startWeak);
 document.getElementById('resetBtn').addEventListener('click', () => {
   if(confirm('確定要清除全部學習紀錄嗎？清除後無法復原。')){
     const keep = {scale:S.scale, rate:S.rate, showZhuyin:S.showZhuyin, doWrite:S.doWrite, voiceURI:S.voiceURI};
