@@ -517,6 +517,15 @@ select{width:100%;min-height:60px;font-size:calc(16px * var(--scale));font-famil
         <button data-v="1" type="button">顯示</button>
         <button data-v="0" type="button">不顯示</button>
       </div>
+      <div class="lbl">語音說明要講幾次</div>
+      <div class="seg" id="segTip">
+        <button data-v="2" type="button">每次都說</button>
+        <button data-v="1" type="button">說過就好</button>
+        <button data-v="0" type="button">不說明</button>
+      </div>
+      <div class="note" style="margin:-4px 2px 4px">
+        不管選哪個，按右上角的 🔊 都可以把說明再聽一次。
+      </div>
       <div class="lbl">練 30 分鐘要不要提醒休息</div>
       <div class="seg" id="segBreak">
         <button data-v="1" type="button">要</button>
@@ -1323,7 +1332,8 @@ const KEY = 'twlearn';
 const OLD_KEYS = ['twlearn.v2', 'twlearn.v1'];   // 曾經用過的名字，只讀不寫
 const DEF = {
   ver:3,
-  scale:1.15, rate:0.75, showZhuyin:1, doWrite:1, breakOn:1, voiceURI:'', hideNotice:0,
+  scale:1.15, rate:0.75, showZhuyin:1, doWrite:1, breakOn:1, tipMode:1, voiceURI:'', hideNotice:0,
+  tips:{},
   useMs:0, useAt:0,
   cards:{}, done:[], streak:0, last:'', todayCount:0, correct:0, wrong:0,
   lastBackup:0
@@ -1550,6 +1560,28 @@ function sayAll(list, r){ TTS.speakAll(list, r); }
    右上角的喇叭鍵可以隨時再聽一次。
    ============================================================ */
 let lastTip = '';
+/* 操作說明講過就不要一直重複 —— 同一句話一天聽幾十遍會讓人煩躁。
+   tipMode: 2=每次都說　1=說過就好（預設）　0=完全不說明
+   不管設定是什麼，右上角的喇叭鍵永遠可以把說明再叫出來一次。 */
+function tipUse(id, max){
+  const m = Number(S.tipMode);
+  if(m === 0) return false;
+  if(m === 2) return true;
+  S.tips = S.tips || {};
+  const n = S.tips[id] || 0;
+  if(n >= (max || 1)) return false;
+  S.tips[id] = n + 1; save();
+  return true;
+}
+/* always：每次都講的狀態（例如現在第幾課）
+   instr ：操作說明，講滿 max 次就不再講 */
+function tipN(id, always, instr, max, extra){
+  lastTip = ((always || '') + (instr || '')).trim();
+  // 選「不說明」就連狀態播報也一起安靜，只留下要學的字
+  const t = (Number(S.tipMode) === 0) ? ''
+          : (always || '') + (tipUse(id, max) ? (instr || '') : '');
+  sayAll((t ? [{t:t, r:tipRate()}] : []).concat(extra || []));
+}
 /* 說明句講快一點才自然；要學的字才需要放慢。
    兩者用同一個速度時，說明聽起來會又慢又怪。 */
 function tipRate(){ return Math.min(1.05, (Number(S.rate) || 0.75) + 0.3); }
@@ -1667,9 +1699,10 @@ function renderHome(){
                     : '✏️ 練常錯的字<span class="sub">目前沒有錯的字</span>';
   document.getElementById('hStreak').textContent = S.streak ? ('🔥 連續練習 ' + S.streak + ' 天') : '';
   const due = d;
-  tip(lv.n + '，第' + cn(l.idx+1) + '課，' + l.topic + '。要開始，按綠色的按鈕。' +
-      (due ? '要複習，按黃色的。' : '') +
-      (wk ? '要練常常寫錯的字，按藍色的。' : ''));
+  tipN('home',
+    lv.n + '，第' + cn(l.idx+1) + '課，' + l.topic + '。',
+    '要開始，按綠色的按鈕。' + (due ? '要複習，按黃色的。' : '') +
+    (wk ? '要練常錯的字，按藍色的。' : ''), 3);
 }
 document.getElementById('goLesson').addEventListener('click', () => startLesson(nextLesson()));
 document.getElementById('goReview').addEventListener('click', startReview);
@@ -1695,7 +1728,7 @@ function renderMap(){
     b.addEventListener('click', () => { renderLessons(li); go('lessons'); });
     box.appendChild(b);
   });
-  tip('這是課程表。按你想學的那一級，太簡單可以直接跳。');
+  tipN('map', '', '這是課程表。按你想學的那一級，太簡單可以直接跳。', 2);
 }
 function renderLessons(li){
   SC.lessons[1] = LEVELS[li].n;
@@ -1711,7 +1744,7 @@ function renderLessons(li){
     b.addEventListener('click', () => startLesson(l));
     box.appendChild(b);
   });
-  tip('按你要上的那一課。');
+  tipN('lessons', '', '按你要上的那一課。', 2);
 }
 
 /* ============================================================
@@ -1797,7 +1830,7 @@ function renderLearn(speakIt){
   card(w.w);
   save();
   if(session.i === 0){
-    tip('看圖片，聽我唸。聽完按綠色的按鈕。', [w.w, w.w]);
+    tipN('learn', '', '看圖片，聽我唸。聽完按綠色的按鈕。', 2, [w.w, w.w]);
   }else if(speakIt){
     sayAll([w.w, w.w]);
   }
@@ -1856,7 +1889,7 @@ function renderWrite(){
   clearPad();
   requestAnimationFrame(sizePad);
   if(session.wi === 0){
-    tip('用手指照著描一次。寫好了按綠色的按鈕。', [c, w.w]);
+    tipN('write', '', '用手指照著描一次。寫好了按綠色的按鈕。', 2, [c, w.w]);
   }else{
     sayAll([c, w.w]);
   }
@@ -1915,13 +1948,15 @@ function renderQ(){
   const doneN = session.total - session.queue.length;
   document.getElementById('qBar').style.width = (doneN/session.total*100) + '%';
   // 第一題先說明規則；同樣題型連續出現時就不再重複唸指令，不然聽十遍會煩
-  const intro = (doneN === 0) ? '來考一下，三個裡面選一個。' : '';
+  const intro = (doneN === 0 && tipUse('quiz.intro', 2)) ? '來考一下，三個裡面選一個。' : '';
   const repeatType = (session.lastType === item.t);
   session.lastType = item.t;
   const ask = (t, extra) => {
     lastTip = t;                                  // 喇叭鍵永遠講完整指令
-    const head = repeatType ? intro : (intro + t);
-    sayAll([head].concat(extra || []));
+    // 同題型連續出現不重複；同一種題型講過三次以後就完全不再講
+    const wantType = !repeatType && tipUse('q.' + item.t, 3);
+    const head = intro + (wantType ? t : '');
+    sayAll((head ? [{t:head, r:tipRate()}] : []).concat(extra || []));
   };
 
   if(item.t === 'sound2char'){
@@ -2021,10 +2056,10 @@ function finish(){
   ab.onclick = () => startLesson(session.lesson);
   go('result');
   const praise = pct>=85 ? '好厲害' : pct>=60 ? '不錯喔' : '沒關係，慢慢來';
-  tip(praise + '，答對' + cn(session.right) + '題。' +
-      (session.kind === 'lesson' ? '要上下一課，按綠色的按鈕。'
-       : session.kind === 'weak' ? '要再練常錯的字，按綠色的按鈕。'
-       : '要繼續複習，按綠色的按鈕。'));
+  tipN('result', praise + '，答對' + cn(session.right) + '題。',
+    (session.kind === 'lesson' ? '要上下一課，按綠色的按鈕。'
+     : session.kind === 'weak' ? '要再練常錯的字，按綠色的按鈕。'
+     : '要繼續複習，按綠色的按鈕。'), 3);
 }
 
 /* ============================================================
@@ -2045,7 +2080,7 @@ function buildZh(){
   };
   fill('zI', INITIALS); fill('zM', MEDIALS); fill('zF', FINALS); fill('zT', TONES, true);
   selZh(zCur, false, true);
-  tip('按一個符號，我先唸它的音，再唸一個用到它的字。');
+  tipN('zh', '', '按一個符號，我先唸它的音，再唸一個用到它的字。', 2);
 }
 function selZh(it, tone, silent){
   zCur = it;
@@ -2093,7 +2128,7 @@ function buildPicto(){
     g.appendChild(b);
   });
   selPicto(pkCur, true);
-  tip('古時候的字就是一張圖。按下面任何一個字，看看它本來長什麼樣子。');
+  tipN('picto', '', '古時候的字就是一張圖。按下面任何一個字，看看它本來長什麼樣子。', 2);
 }
 function selPicto(ch, silent){
   pkCur = ch;
@@ -2161,13 +2196,14 @@ function renderProgress(){
   const el = document.getElementById('stNote');
   el.style.whiteSpace = 'pre-line';
   el.textContent = note;
-  tip('這是你的紀錄。今天練了' + cn(S.todayCount||0) + '題。' +
-      (wk.length ? '有' + cn(wk.length) + '個字常常錯，要練的話按藍色的按鈕。' : ''));
+  tipN('prog', '今天練了' + cn(S.todayCount||0) + '題。',
+    (wk.length ? '有' + cn(wk.length) + '個字常常錯，要練的話按藍色的按鈕。' : ''), 2);
 }
 document.getElementById('stWeakGo').addEventListener('click', startWeak);
 document.getElementById('resetBtn').addEventListener('click', () => {
   if(confirm('確定要清除全部學習紀錄嗎？清除後無法復原。')){
-    const keep = {scale:S.scale, rate:S.rate, showZhuyin:S.showZhuyin, doWrite:S.doWrite, voiceURI:S.voiceURI};
+    const keep = {scale:S.scale, rate:S.rate, showZhuyin:S.showZhuyin, doWrite:S.doWrite,
+                  breakOn:S.breakOn, tipMode:S.tipMode, voiceURI:S.voiceURI};
     S = Object.assign(JSON.parse(JSON.stringify(DEF)), keep);
     touchDay(); save(); renderProgress();
   }
@@ -2192,13 +2228,14 @@ segInit('segScale','scale', applyScale);
 segInit('segRate','rate', () => say('現在的說話速度'));
 segInit('segZhuyin','showZhuyin');
 segInit('segWrite','doWrite');
+segInit('segTip','tipMode', () => { if(Number(S.tipMode) === 2) S.tips = {}; save(); });
 segInit('segBreak','breakOn', () => { if(!Number(S.breakOn)) clearBreak(); });
 function renderSettings(){
-  ['segScale|scale','segRate|rate','segZhuyin|showZhuyin','segWrite|doWrite','segBreak|breakOn']
+  ['segScale|scale','segRate|rate','segZhuyin|showZhuyin','segWrite|doWrite','segBreak|breakOn','segTip|tipMode']
     .forEach(s => { const p = s.split('|'); markSeg(p[0], p[1]); });
   renderVoiceUI();
   renderBackupInfo();
-  tip('這是設定。可以調字的大小和說話速度。');
+  tipN('set', '', '這是設定。可以調字的大小和說話速度。', 2);
 }
 function renderVoiceUI(){
   const info = document.getElementById('voiceInfo'), sel = document.getElementById('voiceSelect');
