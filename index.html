@@ -241,13 +241,15 @@ select{width:100%;min-height:60px;font-size:calc(16px * var(--scale));font-famil
 /* ---------- 沒聲音的提示 ----------
    排進版面裡當一個 flex 項目，不要浮在上面。
    浮動的話會蓋住畫面最下面的主按鈕，而那正是出問題時最需要按的地方。 */
-#speechWarn{
+#speechWarn,#storeWarn{
   display:none;flex:none;margin:6px 12px 0;
   background:#FFF6E2;border:3px solid var(--gold);border-radius:14px;padding:12px;
 }
-#speechWarn.on{display:block;}
-#speechWarn p{font-size:calc(16px * var(--scale));line-height:1.5;margin-bottom:4px;}
-#speechWarn .wt{font-size:calc(19px * var(--scale));font-weight:800;margin-bottom:8px;}
+#storeWarn{background:var(--no-bg);border-color:var(--no);}
+#speechWarn.on,#storeWarn.on{display:block;}
+#speechWarn p,#storeWarn p{font-size:calc(16px * var(--scale));line-height:1.5;margin-bottom:4px;}
+#speechWarn .wt,#storeWarn .wt{font-size:calc(19px * var(--scale));font-weight:800;margin-bottom:8px;}
+#storeWarn .wt{color:var(--no);}
 #speechWarn .btn{margin-top:10px;min-height:56px;}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;}}
 </style>
@@ -260,6 +262,12 @@ select{width:100%;min-height:60px;font-size:calc(16px * var(--scale));font-famil
     <h1 id="title">學國字</h1>
     <div class="right" id="topRight"></div>
   </header>
+
+  <div id="storeWarn" role="alert">
+    <p class="wt">這個瀏覽器不讓網頁存資料</p>
+    <p>可能是無痕模式。現在練的進度一關掉分頁就會不見。</p>
+    <p>請改用一般（非無痕）視窗打開。</p>
+  </div>
 
   <div id="speechWarn" role="alert">
     <p class="wt">好像沒有聲音</p>
@@ -434,6 +442,16 @@ select{width:100%;min-height:60px;font-size:calc(16px * var(--scale));font-famil
       <div class="note" id="voiceInfo">正在尋找中文語音…</div>
       <select id="voiceSelect" aria-label="選擇語音"></select>
       <button class="btn btn-line" id="testVoice" type="button" style="margin-top:8px">🔊 試聽</button>
+
+      <div class="lbl">備份進度（給家人用）</div>
+      <div class="note" id="backupInfo"></div>
+      <button class="btn btn-line" id="btnExport" type="button" style="margin-top:6px">💾 存一份備份檔</button>
+      <button class="btn btn-line" id="btnImport" type="button" style="margin-top:6px">📂 讀回備份檔</button>
+      <input type="file" id="fileImport" accept="application/json,.json,.txt" hidden>
+      <div class="note" style="margin-top:6px">
+        進度只存在這支手機裡。換手機、清除瀏覽器資料、或很久沒打開，都可能不見。
+        存一份備份檔放到 LINE 或雲端，就不怕重學。
+      </div>
     </div>
     <div class="acts"><button class="btn btn-line" data-go="home" type="button">回首頁</button></div>
   </section>
@@ -805,26 +823,96 @@ LESSONS.forEach(l => l.words.forEach(w => { w.lesson = l.id; w.lv = l.lv; WORD_B
 /* ============================================================
    儲存的設定與進度
    ============================================================ */
-const KEY = 'twlearn.v2';
-const DEF = {
-  scale:1.15, rate:0.75, showZhuyin:1, doWrite:1, voiceURI:'', hideNotice:0,
-  cards:{}, done:[], streak:0, last:'', todayCount:0, correct:0, wrong:0
-};
-let S = load();
-function load(){
-  try{
-    const raw = localStorage.getItem(KEY);
-    if(!raw) return JSON.parse(JSON.stringify(DEF));
-    return Object.assign(JSON.parse(JSON.stringify(DEF)), JSON.parse(raw));
-  }catch(e){ return JSON.parse(JSON.stringify(DEF)); }
-}
-function save(){ try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){} }
-
 /* ---- 間隔重複（Leitner）----
    答對往上一格，答錯退兩格。間隔取自實證有效的複習曲線。 */
 const MIN = 60000, DAY = 86400000;
 const INTERVALS = [MIN, 10*MIN, DAY, 2*DAY, 5*DAY, 12*DAY, 30*DAY];
 const MAXBOX = INTERVALS.length - 1;
+
+/* ============================================================
+   儲存的設定與進度
+
+   ★ KEY 這個名字以後絕對不可以再改。
+   改名字等於換一個抽屜，舊資料還在但程式不會去看，
+   使用者的感受就是「更新一次進度就沒了」。
+   要改資料結構請加欄位、並在 migrate() 裡往前相容。
+   ============================================================ */
+const KEY = 'twlearn';
+const OLD_KEYS = ['twlearn.v2', 'twlearn.v1'];   // 曾經用過的名字，只讀不寫
+const DEF = {
+  ver:3,
+  scale:1.15, rate:0.75, showZhuyin:1, doWrite:1, voiceURI:'', hideNotice:0,
+  cards:{}, done:[], streak:0, last:'', todayCount:0, correct:0, wrong:0,
+  lastBackup:0
+};
+let storageOK = true;
+let S = load();
+
+function fresh(){ return JSON.parse(JSON.stringify(DEF)); }
+
+function load(){
+  // 1. 先讀現在的名字
+  const cur = readKey(KEY);
+  if(cur) return migrate(cur);
+  // 2. 讀不到就找舊名字，把資料搬過來（更新版本不該讓人重學）
+  for(let i = 0; i < OLD_KEYS.length; i++){
+    const old = readKey(OLD_KEYS[i]);
+    if(old){
+      const s = migrate(old);
+      try{ localStorage.setItem(KEY, JSON.stringify(s)); }catch(e){}
+      return s;
+    }
+  }
+  return fresh();
+}
+function readKey(k){
+  try{
+    const raw = localStorage.getItem(k);
+    return raw ? JSON.parse(raw) : null;
+  }catch(e){ return null; }
+}
+
+/* 把任何舊版本的資料轉成現在的格式 */
+function migrate(o){
+  const s = Object.assign(fresh(), o);
+  // v1 的進度存在 stats 裡，格式完全不同，這裡把它接回來
+  if(o && o.stats && !Object.keys(s.cards).length){
+    const st = o.stats;
+    s.correct = st.correct || 0;
+    s.wrong = st.wrong || 0;
+    s.streak = st.streak || 0;
+    s.last = st.lastDay || '';
+    s.todayCount = st.todayCount || 0;
+    Object.keys(st.byWord || {}).forEach(k => {
+      if(!WORD_BY_KEY[k]) return;              // 新版沒有的字就跳過
+      const ok = st.byWord[k].ok || 0;
+      s.cards[k] = {l:Math.min(MAXBOX, ok), d:Date.now(), s:st.byWord[k].seen || 0, w:0};
+    });
+    delete s.stats;
+  }
+  s.ver = DEF.ver;
+  return s;
+}
+
+function save(){
+  try{
+    localStorage.setItem(KEY, JSON.stringify(S));
+    if(!storageOK){ storageOK = true; document.getElementById('storeWarn').classList.remove('on'); }
+  }catch(e){
+    // 無痕模式或儲存被擋掉：一定要講出來，不然練半天全部白費
+    if(storageOK){
+      storageOK = false;
+      const w = document.getElementById('storeWarn');
+      if(w) w.classList.add('on');
+    }
+  }
+}
+
+/* 向瀏覽器申請「不要自動清掉」。
+   iPhone 加到主畫面後、Android 的 Chrome 都可能核准。 */
+if(navigator.storage && navigator.storage.persist){
+  navigator.storage.persisted().then(p => { if(!p) navigator.storage.persist(); }).catch(() => {});
+}
 function card(k){ return S.cards[k] || (S.cards[k] = {l:0, d:0, s:0, w:0}); }
 function grade(k, ok){
   const c = card(k); c.s++;
@@ -1325,9 +1413,17 @@ function renderProgress(){
     box.appendChild(d);
   }
   const total = Object.keys(WORD_BY_KEY).length;
-  document.getElementById('stNote').textContent =
-    '全部課程共 ' + total + ' 個字詞，已完成 ' + S.done.length + ' / ' + LESSONS.length + ' 課。' +
+  let note = '全部課程共 ' + total + ' 個字詞，已完成 ' + S.done.length + ' / ' + LESSONS.length + ' 課。' +
     '答錯的字會自動排在幾天後再考一次，這樣記得比較久。';
+  const staleDays = S.lastBackup ? Math.floor((Date.now() - S.lastBackup)/DAY) : 999;
+  if(S.done.length >= 3 && staleDays >= 14){
+    note += '\n\n⚠️ 提醒家人：進度只存在這支手機裡，' +
+      (S.lastBackup ? ('已經 ' + staleDays + ' 天沒備份了') : '還沒有備份過') +
+      '。到「設定 → 備份進度」存一份備份檔比較保險。';
+  }
+  const el = document.getElementById('stNote');
+  el.style.whiteSpace = 'pre-line';
+  el.textContent = note;
 }
 document.getElementById('resetBtn').addEventListener('click', () => {
   if(confirm('確定要清除全部學習紀錄嗎？清除後無法復原。')){
@@ -1360,6 +1456,7 @@ function renderSettings(){
   ['segScale|scale','segRate|rate','segZhuyin|showZhuyin','segWrite|doWrite']
     .forEach(s => { const p = s.split('|'); markSeg(p[0], p[1]); });
   renderVoiceUI();
+  renderBackupInfo();
 }
 function renderVoiceUI(){
   const info = document.getElementById('voiceInfo'), sel = document.getElementById('voiceSelect');
@@ -1383,6 +1480,72 @@ document.getElementById('voiceSelect').addEventListener('change', e => {
   renderVoiceUI(); say('您好，今天天氣很好');
 });
 document.getElementById('testVoice').addEventListener('click', () => say('您好，今天天氣很好'));
+
+/* ============================================================
+   備份與還原
+   進度只在這台裝置上，所以一定要有一條「搬得走」的路。
+   ============================================================ */
+function backupJSON(){
+  return JSON.stringify({app:'twlearn', ver:DEF.ver, at:new Date().toISOString(), data:S}, null, 1);
+}
+function backupName(){
+  const d = new Date();
+  const p = n => (n<10?'0':'') + n;
+  return '學國字備份-' + d.getFullYear() + p(d.getMonth()+1) + p(d.getDate()) + '.json';
+}
+document.getElementById('btnExport').addEventListener('click', () => {
+  const text = backupJSON();
+  try{
+    const blob = new Blob([text], {type:'application/json'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = backupName();
+    document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+    S.lastBackup = Date.now(); save(); renderBackupInfo();
+  }catch(e){
+    // 下載被擋掉時，至少讓使用者能把內容複製走
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(() => {
+        alert('備份內容已經複製起來了，請貼到 LINE 給自己保存。');
+        S.lastBackup = Date.now(); save(); renderBackupInfo();
+      }).catch(() => prompt('請把下面這段全部複製起來保存：', text));
+    }else{
+      prompt('請把下面這段全部複製起來保存：', text);
+    }
+  }
+});
+document.getElementById('btnImport').addEventListener('click', () => document.getElementById('fileImport').click());
+document.getElementById('fileImport').addEventListener('change', e => {
+  const f = e.target.files && e.target.files[0];
+  if(!f) return;
+  const r = new FileReader();
+  r.onload = () => { applyBackup(String(r.result)); e.target.value = ''; };
+  r.onerror = () => alert('讀不到這個檔案，請再試一次。');
+  r.readAsText(f);
+});
+function applyBackup(text){
+  let o;
+  try{ o = JSON.parse(text); }catch(err){ alert('這個檔案看起來不是學國字的備份檔。'); return; }
+  const d = (o && o.data) ? o.data : o;
+  if(!d || typeof d !== 'object' || (!d.cards && !d.done)){
+    alert('這個檔案看起來不是學國字的備份檔。'); return;
+  }
+  const mine = S.done ? S.done.length : 0;
+  const theirs = d.done ? d.done.length : 0;
+  if(!confirm('要用備份檔取代目前的進度嗎？\n\n目前這支手機：完成 ' + mine + ' 課\n備份檔裡面：完成 ' + theirs + ' 課\n\n按確定之後，目前的進度會被蓋掉。')) return;
+  S = migrate(d);
+  save();
+  renderBackupInfo(); renderHome();
+  alert('讀取成功，已經完成 ' + (S.done ? S.done.length : 0) + ' 課。');
+}
+function renderBackupInfo(){
+  const el = document.getElementById('backupInfo');
+  if(!el) return;
+  if(!S.lastBackup){ el.textContent = '還沒有備份過。'; return; }
+  const days = Math.floor((Date.now() - S.lastBackup) / DAY);
+  el.textContent = '上次備份：' + (days <= 0 ? '今天' : days + ' 天前');
+}
 
 /* 啟動 */
 renderHome();
