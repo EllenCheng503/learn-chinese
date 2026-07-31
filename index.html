@@ -103,7 +103,7 @@ button{
 .hero .topic{font-size:calc(21px * var(--scale));font-weight:700;color:var(--brand);}
 .bar{height:12px;background:#E7DFCE;border-radius:99px;overflow:hidden;margin-top:8px;}
 .bar>i{display:block;height:100%;background:var(--brand);border-radius:99px;}
-.tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;}
+.tiles{display:grid;grid-template-columns:repeat(5,1fr);gap:5px;}
 .tile{
   background:var(--card);border:2px solid var(--line);border-radius:12px;
   min-height:66px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;
@@ -212,6 +212,26 @@ button{
 .guide-char.off{display:none;}
 #pad{position:absolute;inset:0;touch-action:none;width:100%;height:100%;}
 
+/* ---------- 象形字：古字 ➜ 今字 ---------- */
+.picto{
+  display:flex;align-items:center;gap:8px;width:100%;text-align:left;
+  background:#EFF5F2;border:2px solid #CFE2DA;border-radius:12px;padding:6px 10px;
+}
+.picto:active{background:#E2EDE8;}
+.picto .old{flex:none;width:clamp(34px,5.5vh,48px);height:clamp(34px,5.5vh,48px);color:var(--brand);}
+.picto .arw{flex:none;color:var(--ink-soft);font-size:calc(15px * var(--scale));}
+.picto .now{flex:none;font-size:clamp(24px,4.4vh,38px);font-weight:700;line-height:1;}
+.picto .tx{flex:1;min-width:0;font-size:calc(14px * var(--scale));line-height:1.35;color:var(--ink);}
+.pic-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;}
+.pic-cell{
+  background:var(--card);border:2px solid var(--line);border-radius:12px;padding:6px 2px;
+  display:flex;flex-direction:column;align-items:center;gap:2px;min-height:84px;
+}
+.pic-cell:active{background:#EFE8DA;}
+.pic-cell.sel{background:#E8F2EE;border-color:var(--brand);}
+.pic-cell svg{width:38px;height:38px;color:var(--brand);}
+.pic-cell b{font-size:calc(22px * var(--scale));}
+
 /* ---------- 注音表 ---------- */
 .zh-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:5px;}
 .zh-cell{
@@ -302,6 +322,12 @@ select{width:100%;min-height:60px;font-size:calc(16px * var(--scale));font-famil
       <div class="tiles">
         <button class="tile" data-go="map" type="button"><span class="i">📚</span><span class="t">課程</span></button>
         <button class="tile" data-go="zhtable" type="button"><span class="i">ㄅ</span><span class="t">注音表</span></button>
+        <button class="tile" data-go="picto" type="button"><span class="i">
+          <svg viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="8"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"
+               style="width:1em;height:1em;color:var(--brand);vertical-align:-.1em">
+            <path d="M8 86L28 32L42 86L50 18L60 86L74 34L92 86"/>
+          </svg></span><span class="t">象形字</span></button>
         <button class="tile" data-go="progress" type="button"><span class="i">⭐</span><span class="t">紀錄</span></button>
         <button class="tile" data-go="settings" type="button"><span class="i">⚙️</span><span class="t">設定</span></button>
       </div>
@@ -327,7 +353,7 @@ select{width:100%;min-height:60px;font-size:calc(16px * var(--scale));font-famil
       <div class="card">
         <div class="pic" id="lPic"></div>
         <div class="zhu-row" id="lWord"></div>
-        <div class="hint" id="lHint"></div>
+        <button class="hint" id="lHint" type="button"></button>
       </div>
     </div>
     <div class="acts">
@@ -400,6 +426,28 @@ select{width:100%;min-height:60px;font-size:calc(16px * var(--scale));font-famil
       <div class="sec">介音（3個）</div><div class="zh-grid" id="zM"></div>
       <div class="sec">韻母（13個）</div><div class="zh-grid" id="zF"></div>
       <div class="sec">聲調（按一下比較看看）</div><div class="zh-grid" id="zT"></div>
+    </div>
+    <div class="acts"><button class="btn btn-line" data-go="home" type="button">回首頁</button></div>
+  </section>
+
+  <!-- ===== 象形字 ===== -->
+  <section class="screen" id="s-picto">
+    <div class="body scroll">
+      <div class="card" style="flex:none;padding:8px;gap:6px;">
+        <div style="display:flex;align-items:center;gap:12px;justify-content:center">
+          <svg id="pkOld" viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="6"
+               stroke-linecap="round" stroke-linejoin="round"
+               style="width:clamp(56px,11vh,90px);height:clamp(56px,11vh,90px);color:var(--brand)"></svg>
+          <span style="font-size:calc(22px * var(--scale));color:var(--ink-soft)">➜</span>
+          <b id="pkNow" style="font-size:clamp(44px,9vh,74px);line-height:1"></b>
+        </div>
+        <div class="note" id="pkTx" style="font-size:calc(17px * var(--scale));color:var(--ink)"></div>
+      </div>
+      <div class="note" style="margin:8px 2px 4px">古時候的字就是一張圖。按下面任何一個字看看它本來的樣子。</div>
+      <div class="pic-grid" id="pkGrid"></div>
+      <div class="note" style="margin-top:10px">
+        這些圖是為了好記憶畫的簡化示意，不是古文字拓片的摹本。
+      </div>
     </div>
     <div class="acts"><button class="btn btn-line" data-go="home" type="button">回首頁</button></div>
   </section>
@@ -1105,6 +1153,46 @@ const LEVELS = [
 ]}
 ];
 
+/* ============================================================
+   象形字：古代的字長什麼樣子
+
+   這些圖是為了教學畫的「簡化示意」，不是特定甲骨文拓片的摹本。
+   只收錄字形來源清楚、而且畫出來認得出來的象形字；
+   形聲字（像「飯」＝食＋反）不放這裡，那類用部件提示解釋比較準確。
+   ============================================================ */
+const PICTO = {
+'日':{t:'太陽，中間一點是光',p:'<circle cx="50" cy="50" r="30"/><circle cx="50" cy="50" r="6" fill="currentColor" stroke="none"/>'},
+'月':{t:'天上的月亮，缺一角',p:'<path d="M64 14A38 38 0 1 0 64 86A29 29 0 1 1 64 14Z" fill="currentColor" stroke="none"/>'},
+'山':{t:'三座並排的山峰',p:'<path d="M8 86L28 32L42 86L50 18L60 86L74 34L92 86"/>'},
+'水':{t:'中間是水流，兩邊是水花',p:'<path d="M50 10C42 28 58 44 50 58C43 72 57 80 50 92"/><path d="M28 30L22 42M30 60L24 72M72 30L78 42M70 60L76 72"/>'},
+'火':{t:'燒起來的火焰',p:'<path d="M50 92C34 74 38 48 50 12C62 48 66 74 50 92Z"/><path d="M26 82C18 66 24 50 34 42M74 82C82 66 76 50 66 42"/>'},
+'木':{t:'一棵樹，上面枝、下面根',p:'<path d="M50 8L50 92M50 34L22 12M50 34L78 12M50 64L24 90M50 64L76 90"/>'},
+'人':{t:'一個人側面站著',p:'<path d="M58 10C44 26 42 40 38 92M46 34L72 90"/>'},
+'大':{t:'一個人張開手腳，就是大',p:'<circle cx="50" cy="16" r="9"/><path d="M50 25L50 56M50 33L18 44M50 33L82 44M50 56L26 90M50 56L74 90"/>'},
+'小':{t:'三個小點，東西很小',p:'<path d="M50 24L50 52M26 30L20 56M74 30L80 56"/>'},
+'口':{t:'一張嘴巴',p:'<path d="M18 36Q50 18 82 36Q80 78 50 82Q20 78 18 36Z"/>'},
+'目':{t:'一隻眼睛，中間是眼珠',p:'<path d="M10 50Q50 20 90 50Q50 80 10 50Z"/><circle cx="50" cy="50" r="8" fill="currentColor" stroke="none"/>'},
+'耳':{t:'一隻耳朵的形狀',p:'<path d="M66 12C32 12 24 44 32 64C39 82 60 90 72 86M46 34C60 30 66 46 54 58"/>'},
+'手':{t:'張開的五根手指',p:'<path d="M50 92L50 52M50 58L24 32M50 54L36 20M50 52L54 14M50 54L70 20M50 58L84 36"/>'},
+'心':{t:'一顆心臟',p:'<path d="M50 90C18 66 12 34 30 23C41 16 50 28 50 38C50 28 59 16 70 23C88 34 82 66 50 90Z"/>'},
+'魚':{t:'一條魚，有頭有尾巴',p:'<path d="M12 50Q34 24 64 31Q80 37 84 50Q80 63 64 69Q34 76 12 50Z"/><path d="M84 50L98 32M84 50L98 68"/><circle cx="30" cy="45" r="4" fill="currentColor" stroke="none"/>'},
+'鳥':{t:'一隻鳥，有嘴巴有尾巴',p:'<circle cx="34" cy="24" r="12"/><path d="M22 20L6 25L22 30"/><path d="M40 33Q70 38 72 62Q72 80 54 82Q40 80 38 64"/><path d="M72 62L96 66M72 70L92 82M50 82L48 96M60 82L62 96"/>'},
+'馬':{t:'一匹馬，上面是鬃毛',p:'<path d="M10 42Q18 24 38 28L46 42Q60 50 66 46Q86 48 86 72"/><path d="M24 18L28 32M36 14L38 30M48 16L48 32"/><path d="M52 52L50 90M80 58L84 90"/><path d="M86 62Q98 70 92 88"/>'},
+'牛':{t:'牛的頭，上面兩隻角',p:'<path d="M50 90L50 44M50 44Q28 22 14 30M50 44Q72 22 86 30M28 62L72 62"/>'},
+'羊':{t:'羊的頭，角往下彎',p:'<path d="M50 90L50 46M50 46Q26 38 20 14M50 46Q74 38 80 14M30 66L70 66"/>'},
+'門':{t:'兩扇門板',p:'<path d="M14 18L14 90M44 18L44 90M56 18L56 90M86 18L86 90M14 18L44 18M56 18L86 18M14 42L44 42M56 42L86 42"/>'},
+'雨':{t:'天上掉下來的雨滴',p:'<path d="M10 20L90 20M50 20L50 38"/><path d="M24 46L24 56M24 68L24 78M42 46L42 56M42 68L42 78M58 46L58 56M58 68L58 78M76 46L76 56M76 68L76 78"/>'},
+'車':{t:'一個車輪',p:'<circle cx="50" cy="50" r="26"/><path d="M50 24L50 76M24 50L76 50M32 32L68 68M68 32L32 68M50 8L50 24M50 76L50 92"/>'},
+'中':{t:'一根竿子插在正中間',p:'<path d="M50 8L50 92M32 32L68 32L68 64L32 64Z"/>'},
+'米':{t:'散開的米粒',p:'<path d="M14 50L86 50"/><circle cx="28" cy="30" r="5" fill="currentColor" stroke="none"/><circle cx="50" cy="24" r="5" fill="currentColor" stroke="none"/><circle cx="72" cy="30" r="5" fill="currentColor" stroke="none"/><circle cx="28" cy="70" r="5" fill="currentColor" stroke="none"/><circle cx="50" cy="76" r="5" fill="currentColor" stroke="none"/><circle cx="72" cy="70" r="5" fill="currentColor" stroke="none"/>'},
+'子':{t:'一個嬰兒，頭大、包著身體',p:'<circle cx="50" cy="20" r="13"/><path d="M50 33L50 92M22 48L78 48"/>'},
+'女':{t:'一個人跪坐，兩手交叉在前',p:'<circle cx="54" cy="16" r="8"/><path d="M54 24C44 38 46 54 60 62C72 68 64 80 44 80"/><path d="M24 44Q54 32 80 48"/>'},
+'上':{t:'一橫的上面加一點，就是上',p:'<path d="M14 62L86 62M50 62L50 26M30 26L70 26"/>'},
+'下':{t:'一橫的下面加一點，就是下',p:'<path d="M14 38L86 38M50 38L50 74M30 74L70 74"/>'},
+'石':{t:'山崖底下的一塊石頭',p:'<path d="M14 12L14 52M14 12L62 12"/><path d="M32 54Q54 44 68 58Q78 76 56 84Q30 86 32 54Z"/>'},
+'舟':{t:'一艘小船',p:'<path d="M10 46Q50 86 90 46"/><path d="M10 46L16 30M90 46L84 30"/><path d="M34 42L38 68M66 42L62 68"/>'}
+};
+
 /* 注音符號表 */
 const INITIALS=[['ㄅ','八','ㄅㄚ'],['ㄆ','婆','ㄆㄛˊ'],['ㄇ','媽','ㄇㄚ'],['ㄈ','飯','ㄈㄢˋ'],
 ['ㄉ','大','ㄉㄚˋ'],['ㄊ','湯','ㄊㄤ'],['ㄋ','牛','ㄋㄧㄡˊ'],['ㄌ','老','ㄌㄠˇ'],
@@ -1464,6 +1552,7 @@ const SC = {
   home:['s-home','學國字'], map:['s-map','課程地圖'], lessons:['s-lessons','選一課'],
   learn:['s-learn','看圖學字'], write:['s-write','寫字練習'], quiz:['s-quiz','小考'],
   result:['s-result','練習結果'], zhtable:['s-zhtable','注音符號表'],
+  picto:['s-picto','象形字'],
   progress:['s-progress','我的紀錄'], settings:['s-settings','設定']
 };
 let stack = ['home'];
@@ -1490,6 +1579,7 @@ document.addEventListener('click', e => {
   if(t === 'home'){ home(); return; }
   if(t === 'map'){ renderMap(); go('map'); return; }
   if(t === 'zhtable'){ buildZh(); go('zhtable'); return; }
+  if(t === 'picto'){ buildPicto(); go('picto'); return; }
   if(t === 'progress'){ renderProgress(); go('progress'); return; }
   if(t === 'settings'){ renderSettings(); go('settings'); return; }
 });
@@ -1612,8 +1702,21 @@ function renderLearn(speakIt){
   document.getElementById('lPic').textContent = w.p || '📖';
   document.getElementById('lWord').innerHTML = zhuRow(w, Number(S.showZhuyin) === 1);
   const h = document.getElementById('lHint');
-  if(w.h){ h.style.display = ''; h.innerHTML = '💡 ' + w.h; }
-  else { h.style.display = 'none'; }
+  const first = pictoCharOf(w);
+  if(first){
+    // 象形字比部件提示更好記：直接讓她看到古時候那張圖
+    h.style.display = ''; h.className = 'hint picto';
+    h.innerHTML = pictoSVG(first, 'old') +
+      '<span class="arw">➜</span><b class="now">' + first + '</b>' +
+      '<span class="tx">' + PICTO[first].t + '</span>';
+    h.dataset.say = first + '，' + PICTO[first].t;
+  }else if(w.h){
+    h.style.display = ''; h.className = 'hint';
+    h.innerHTML = '💡 ' + w.h;
+    h.dataset.say = w.h;
+  }else{
+    h.style.display = 'none'; h.dataset.say = '';
+  }
   document.getElementById('lNext').textContent =
     (session.i === session.words.length-1) ? (Number(S.doWrite) ? '開始練寫 →' : '開始小考 →') : '下一個 →';
   card(w.w);
@@ -1625,6 +1728,10 @@ function renderLearn(speakIt){
   }
 }
 document.getElementById('lSpeak').addEventListener('click', () => say(session.words[session.i].w));
+document.getElementById('lHint').addEventListener('click', () => {
+  const t = document.getElementById('lHint').dataset.say;
+  if(t) say(t, tipRate());
+});
 document.getElementById('lNext').addEventListener('click', () => {
   if(session.i < session.words.length-1){ session.i++; renderLearn(true); return; }
   if(Number(S.doWrite)){ session.wi = 0; session.stage = 'write'; go('write'); renderWrite(); }
@@ -1867,6 +1974,49 @@ function selZh(it, tone, silent){
   document.querySelectorAll('.zh-cell').forEach(c =>
     c.classList.toggle('sel', c.querySelector('.sym').textContent === it[0]));
   if(!silent) say(it[1], tone ? Math.min(S.rate, 0.6) : undefined);
+}
+
+/* ============================================================
+   象形字
+   ============================================================ */
+/* 詞裡哪一個字要秀古字：優先第一個字；
+   「子」在「桌子」「椅子」裡只是語尾，秀嬰兒的古字會誤導，所以跳過。 */
+const PICTO_SKIP = {'子':1};
+function pictoCharOf(w){
+  const cs = Array.from(w.w);
+  if(PICTO[cs[0]]) return cs[0];
+  for(let i = 1; i < cs.length; i++){
+    if(PICTO[cs[i]] && !PICTO_SKIP[cs[i]]) return cs[i];
+  }
+  return '';
+}
+function pictoSVG(ch, cls){
+  const d = PICTO[ch]; if(!d) return '';
+  return '<svg class="' + (cls||'') + '" viewBox="0 0 100 100" fill="none" stroke="currentColor" ' +
+    'stroke-width="6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + d.p + '</svg>';
+}
+let pkCur = Object.keys(PICTO)[0];
+function buildPicto(){
+  const g = document.getElementById('pkGrid');
+  g.innerHTML = '';
+  Object.keys(PICTO).forEach(ch => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'pic-cell';
+    b.innerHTML = pictoSVG(ch) + '<b>' + ch + '</b>';
+    b.addEventListener('click', () => selPicto(ch));
+    g.appendChild(b);
+  });
+  selPicto(pkCur, true);
+  tip('古時候的字就是一張圖。按下面任何一個字，看看它本來長什麼樣子。');
+}
+function selPicto(ch, silent){
+  pkCur = ch;
+  document.getElementById('pkOld').innerHTML = PICTO[ch].p;
+  document.getElementById('pkNow').textContent = ch;
+  document.getElementById('pkTx').textContent = PICTO[ch].t;
+  document.querySelectorAll('.pic-cell').forEach(c =>
+    c.classList.toggle('sel', c.querySelector('b').textContent === ch));
+  if(!silent) sayAll([ch, {t:PICTO[ch].t, r:tipRate()}]);
 }
 
 /* ============================================================
